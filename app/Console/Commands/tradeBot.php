@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
 use GuzzleHttp\Client;
+use App\Models\Tradepair;
 
 
 class tradeBot extends Command
@@ -27,6 +28,16 @@ class tradeBot extends Command
      */
     public function handle()
     {
+        $pairs = Tradepair::all();
+        foreach ($pairs as $pair)
+        {
+            $result = $this->signal($pair->pairs);
+            echo nl2br($result."\n");
+        }
+    }
+
+    private function signal($pair)
+    {
         $apiKey = 'zyzDM2-Gjqv3XgursNo1Fd51kmeWahfbe7ZtnK7o81Y';
         $apiSecret = 'e5hhfh4rhqnpq';
         $baseUrl = 'https://api.luno.com/api/1';
@@ -36,7 +47,7 @@ class tradeBot extends Command
         $client = new Client();
 
         // Fetch historical price data for analysis
-        $response = $client->get("$baseUrl/trades?pair=XBTZAR");
+        $response = $client->get("$baseUrl/trades?pair=".$pair);
 
         if ($response->getStatusCode() === 200) {
             $trades = json_decode($response->getBody(), true);
@@ -65,15 +76,15 @@ class tradeBot extends Command
 
             if ($isShortAboveLong && !$wasShortAboveLong && $currentRSI < $rsiThreshold) {
                 // Generate a buy signal
-                echo "Generate Buy Signal";
+                return "Generate Buy Signal for ".$pair;
                 // Implement code to execute a buy order using Luno API
             } elseif (!$isShortAboveLong && $wasShortAboveLong) {
                 // Generate a sell signal
-                echo "Generate Sell Signal";
+                return "Generate Sell Signal for ".$pair;
                 // Implement code to execute a sell order using Luno API
             }
             else{
-                echo 'No Signal';
+                return 'No Signal for '.$pair;
             }
 
         } else {
