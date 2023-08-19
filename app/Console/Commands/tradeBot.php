@@ -31,13 +31,12 @@ class tradeBot extends Command
         $pairs = Tradepair::all();
         foreach ($pairs as $pair) {
             $result = $this->signal($pair->pairs);
-
+            //dd($pair);
             if ($result === "Buy") {
                 echo "Buying " . $pair->pairs . "\n";
+                dd($pair);
                 // Execute buy order logic with budget and stop-loss
-                $budget = 1000; // Set your budget here
-                $stopLossPrice = 950; // Set your stop-loss price here
-                $this->executeBuyOrder($pair->pairs, $budget, $stopLossPrice);
+                $this->executeBuyOrder($pair->pairs, $pair->budget, $pair->stoploss);
             } elseif ($result === "Sell") {
                 echo "Selling " . $pair->pairs . "\n";
                 // Execute sell order logic here
@@ -55,7 +54,7 @@ class tradeBot extends Command
         $client = new Client();
 
         // Fetch the current ticker price
-        $response = $client->get("https://api.luno.com/api/1/ticker?pair=$pair");
+        $response = $client->get(env('LUNOAPI')."/ticker?pair=$pair");
         $tickerData = json_decode($response->getBody(), true);
         $currentPrice = $tickerData['last_trade'];
 
@@ -75,8 +74,8 @@ class tradeBot extends Command
         ];
 
         // Replace with your Luno API key and secret
-        $apiKey = 'YOUR_API_KEY';
-        $apiSecret = 'YOUR_API_SECRET';
+        $apiKey = env('APIKEY');
+        $apiSecret = env('APISECRET');
 
         // Calculate signature
         $nonce = time();
@@ -120,12 +119,12 @@ class tradeBot extends Command
             //dd($trades);
             //dd($this->calculateRSI($trades,14));
             // Define parameters for the strategy
-            $rsiThreshold = 20;    // RSI threshold for buy confirmation
+            $rsiThreshold = env('RSI');    // RSI threshold for buy confirmation
 
             // Calculate short-term and long-term moving averages
             // Define your short-term and long-term intervals in minutes
-            $shortTermInterval = 15; // 15 minutes for short-term indicator
-            $longTermInterval = 60;  // 1 hour (60 minutes) for long-term indicator
+            $shortTermInterval = env('SHORTTERM'); // 15 minutes for short-term indicator
+            $longTermInterval = env('LONGTERM');  // 1 hour (60 minutes) for long-term indicator
 
             // Calculate the number of periods based on the intervals
             $shortTermPeriods = 24 * 60 / $shortTermInterval; // 24 hours of 15-minute periods
