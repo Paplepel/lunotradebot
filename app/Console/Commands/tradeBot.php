@@ -29,6 +29,7 @@ class tradeBot extends Command
     public function handle()
     {
         $pairs = Tradepair::all();
+        //dd($this->checkAccountBalance());
         foreach ($pairs as $pair) {
             $result = $this->signal($pair->pairs);
             //dd($pair);
@@ -49,7 +50,7 @@ class tradeBot extends Command
         }
     }
 
-    private function executeSellOrder($pair, $amountToSell, $stopLossPrice)
+    private function executeSellOrder($pair, $amountToSell, $stopLossPercentage)
     {
         $client = new Client();
 
@@ -74,17 +75,11 @@ class tradeBot extends Command
         $apiKey = env('APIKEY');
         $apiSecret = env('APISECRET');
 
-        // Calculate signature
-        $nonce = time();
-        $signature = hash_hmac('sha256', $apiKey . $nonce . json_encode($postData), $apiSecret);
 
         // Send the sell order request
-        $response = $client->post('https://api.luno.com/api/1/postorder', [
-            'headers' => [
-                'Content-Type' => 'application/json',
-                'Authorization' => "Bearer $apiKey:$nonce:$signature",
-            ],
-            'json' => $postData,
+        $response = $client->post(env('LUNOAPI').'/postorder', [
+            'form_params' => $postData, // Use 'form_params' for form data
+            'auth' => [$apiKey,$apiSecret] // Add authentication
         ]);
 
         // Handle the sell order response
@@ -97,7 +92,42 @@ class tradeBot extends Command
         }
     }
 
+    private function checkAccountBalance()
+    {
+        try {
+            // Replace with your Luno API key and secret
+            $apiKey = env('APIKEY');
+            $apiSecret = env('APISECRET');
 
+            // Create a Guzzle client instance
+            $client = new Client();
+
+            $options = [
+                'auth' => [$apiKey,$apiSecret]
+            ];
+
+            //dd($headers);
+            // Send the request to check your account balance
+            $response = $client->get(env('LUNOAPI').'/balance?assets=ETH', $options);
+
+            // Parse and display the response
+            if ($response->getStatusCode() === 200) {
+                $data = json_decode($response->getBody(), true);
+                // Extract and display your account balances
+                foreach ($data as $balance) {
+                    //dd($balance);
+                    $asset = $balance[0]['asset'];
+                    $balanceValue = $balance[0]['balance'];
+                    echo "Asset: $asset, Balance: $balanceValue\n";
+                }
+            } else {
+                echo "Failed to fetch account balance. HTTP Status Code: " . $response->getStatusCode() . "\n";
+            }
+        } catch (\ErrorException $e) {
+            // Handle exceptions
+            echo "Error: " . $e->getMessage() . "\n";
+        }
+    }
     private function executeBuyOrder($pair, $budget, $stopLossPercentage)
     {
         $client = new Client();
@@ -122,21 +152,14 @@ class tradeBot extends Command
             'stop_price' => $stopLossPrice, // Specify the stop-loss price here
         ];
 
+
         // Replace with your Luno API key and secret
         $apiKey = env('APIKEY');
         $apiSecret = env('APISECRET');
 
-        // Calculate signature
-        $nonce = time();
-        $signature = hash_hmac('sha256', $apiKey . $nonce . json_encode($postData), $apiSecret);
-
-        // Send the buy order request
-        $response = $client->post('https://api.luno.com/api/1/postorder', [
-            'headers' => [
-                'Content-Type' => 'application/json',
-                'Authorization' => "Bearer $apiKey:$nonce:$signature",
-            ],
-            'json' => $postData,
+        $response = $client->post(env('LUNOAPI').'/postorder', [
+            'form_params' => $postData, // Use 'form_params' for form data
+            'auth' => [$apiKey,$apiSecret] // Add authentication
         ]);
 
         // Handle the buy order response
