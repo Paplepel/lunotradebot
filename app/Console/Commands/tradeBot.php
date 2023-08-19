@@ -35,34 +35,33 @@ class tradeBot extends Command
         // Create a Guzzle client instance
         $client = new Client();
 
-// Fetch historical price data for analysis
+        // Fetch historical price data for analysis
         $response = $client->get("$baseUrl/trades?pair=XBTZAR");
 
         if ($response->getStatusCode() === 200) {
             $trades = json_decode($response->getBody(), true);
             //dd($trades);
-            dd($this->calculateRSI($trades,14));
+            //dd($this->calculateRSI($trades,14));
             // Define parameters for the strategy
             $shortTermPeriod = 10; // Number of days for short-term moving average
             $longTermPeriod = 30;  // Number of days for long-term moving average
             $rsiThreshold = 30;    // RSI threshold for buy confirmation
 
             // Calculate short-term and long-term moving averages
-            $shortTermAverage = $this->calculateMovingAverage($trades, $shortTermPeriod);
-            $longTermAverage = $this->calculateMovingAverage($trades, $longTermPeriod);
-
+            $shortTermAverage = $this->calculateMovingAverage($trades['trades'], $shortTermPeriod);
+            $longTermAverage = $this->calculateMovingAverage($trades['trades'], $longTermPeriod);
             // Calculate RSI values
-            $rsiValues = $this->calculateRSI($trades);
+            $rsiValues = $this->calculateRSI($trades,$shortTermPeriod);
 
             // Get the latest trade index
-            $lastTradeIndex = count($trades) - 1;
-
+            $tradeCount = count($trades['trades']);
+            $lastTradeIndex = $tradeCount - 1;
             // Check for moving average crossover
-            $isShortAboveLong = $shortTermAverage[$lastTradeIndex] > $longTermAverage[$lastTradeIndex];
-            $wasShortAboveLong = $shortTermAverage[$lastTradeIndex - 1] > $longTermAverage[$lastTradeIndex - 1];
-
+            //dd($shortTermAverage);
+            $isShortAboveLong = $shortTermAverage[count($shortTermAverage)-1] > $longTermAverage[count($longTermAverage)-1];
+            $wasShortAboveLong = $shortTermAverage[count($shortTermAverage) - 2] > $longTermAverage[count($longTermAverage) - 2];
             // Check RSI value
-            $currentRSI = $rsiValues[$lastTradeIndex];
+            $currentRSI = $rsiValues[count($rsiValues)-1];
 
             if ($isShortAboveLong && !$wasShortAboveLong && $currentRSI < $rsiThreshold) {
                 // Generate a buy signal
@@ -72,6 +71,9 @@ class tradeBot extends Command
                 // Generate a sell signal
                 echo "Generate Sell Signal";
                 // Implement code to execute a sell order using Luno API
+            }
+            else{
+                echo 'No Signal';
             }
 
         } else {
@@ -113,7 +115,6 @@ class tradeBot extends Command
             return $a['timestamp'] - $b['timestamp'];
         });
 
-        $period = 14; // 14-day RSI period
         $gains = [];
         $losses = [];
         $rsiValues = [];
