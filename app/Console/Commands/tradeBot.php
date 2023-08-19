@@ -49,6 +49,55 @@ class tradeBot extends Command
         }
     }
 
+    private function executeSellOrder($pair, $amountToSell, $stopLossPrice)
+    {
+        $client = new Client();
+
+        // Fetch the current ticker price
+        $response = $client->get(env('LUNOAPI') . "/ticker?pair=$pair");
+        $tickerData = json_decode($response->getBody(), true);
+        $currentPrice = $tickerData['last_trade'];
+
+        // Calculate the stop-loss price as a percentage below the current price
+        $stopLossPrice = $currentPrice - ($currentPrice * ($stopLossPercentage / 100));
+
+        // Prepare sell order parameters
+        $postData = [
+            'pair' => $pair,
+            'type' => 'SELL',
+            'volume' => $amountToSell,
+            'price' => $currentPrice,
+            'stop_price' => $stopLossPrice,
+        ];
+
+        // Replace with your Luno API key and secret
+        $apiKey = env('APIKEY');
+        $apiSecret = env('APISECRET');
+
+        // Calculate signature
+        $nonce = time();
+        $signature = hash_hmac('sha256', $apiKey . $nonce . json_encode($postData), $apiSecret);
+
+        // Send the sell order request
+        $response = $client->post('https://api.luno.com/api/1/postorder', [
+            'headers' => [
+                'Content-Type' => 'application/json',
+                'Authorization' => "Bearer $apiKey:$nonce:$signature",
+            ],
+            'json' => $postData,
+        ]);
+
+        // Handle the sell order response
+        $sellOrderResponse = json_decode($response->getBody(), true);
+        if (isset($sellOrderResponse['order_id'])) {
+            echo "Sell order placed successfully. Order ID: {$sellOrderResponse['order_id']}\n";
+            echo "Stop-loss price: $stopLossPrice\n";
+        } else {
+            echo "Failed to place sell order.\n";
+        }
+    }
+
+
     private function executeBuyOrder($pair, $budget, $stopLossPercentage)
     {
         $client = new Client();
@@ -103,69 +152,70 @@ class tradeBot extends Command
     private function signal($pair)
     {
         try {
-        $apiKey = env('APIKEY');
-        $apiSecret = env('apisecret');
-        $baseUrl = env('LUNOAPI');
+            $apiKey = env('APIKEY');
+            $apiSecret = env('APISECRET');
+            $baseUrl = env('LUNOAPI');
 
-        // Create a Guzzle client instance
-        // Create a Guzzle client instance
-        $client = new Client();
+            // Create a Guzzle client instance
+            $client = new Client();
 
-        // Fetch historical price data for analysis
-        $response = $client->get($baseUrl."/trades?pair=".$pair);
+            // Fetch historical price data for analysis
+            $response = $client->get($baseUrl . "/trades?pair=" . $pair);
 
-        if ($response->getStatusCode() === 200) {
-            $trades = json_decode($response->getBody(), true);
-            //dd($trades);
-            //dd($this->calculateRSI($trades,14));
-            // Define parameters for the strategy
-            $rsiThreshold = env('RSI');    // RSI threshold for buy confirmation
+            if ($response->getStatusCode() === 200) {
+                $trades = json_decode($response->getBody(), true);
 
-            // Calculate short-term and long-term moving averages
-            // Define your short-term and long-term intervals in minutes
-            $shortTermInterval = env('SHORTTERM'); // 15 minutes for short-term indicator
-            $longTermInterval = env('LONGTERM');  // 1 hour (60 minutes) for long-term indicator
+                // Define parameters for the strategy
+                $rsiThresholdBuy = env('RSI_BUY');    // RSI threshold for buy confirmation
+                $rsiThresholdSell = env('RSI_SELL');  // RSI threshold for sell confirmation
 
-            // Calculate the number of periods based on the intervals
-            $shortTermPeriods = 24 * 60 / $shortTermInterval; // 24 hours of 15-minute periods
-            $longTermPeriods = 24 * 60 / $longTermInterval;    // 24 hours of 1-hour periods
+                // Calculate short-term and long-term moving averages
+                // Define your short-term and long-term intervals in minutes
+                $shortTermInterval = env('SHORTTERM'); // 15 minutes for short-term indicator
+                $longTermInterval = env('LONGTERM');   // 1 hour (60 minutes) for long-term indicator
 
-            $shortTermAverage = $this->calculateMovingAverage($trades['trades'], $shortTermPeriods);
-            $longTermAverage = $this->calculateMovingAverage($trades['trades'], $longTermPeriods);
-            // Calculate RSI values
-            $rsiValues = $this->calculateRSI($trades,$shortTermPeriods);
+                // Calculate the number of periods based on the intervals
+                $shortTermPeriods = 24 * 60 / $shortTermInterval; // 24 hours of 15-minute periods
+                $longTermPeriods = 24 * 60 / $longTermInterval;   // 24 hours of 1-hour periods
 
-            // Get the latest trade index
-            $tradeCount = count($trades['trades']);
-            $lastTradeIndex = $tradeCount - 1;
-            // Check for moving average crossover
-            //dd($shortTermAverage);
-            $isShortAboveLong = $shortTermAverage[count($shortTermAverage)-1] > $longTermAverage[count($longTermAverage)-1];
-            $wasShortAboveLong = $shortTermAverage[count($shortTermAverage) - 2] > $longTermAverage[count($longTermAverage) - 2];
-            // Check RSI value
-            $currentRSI = $rsiValues[count($rsiValues)-1];
+                $shortTermAverage = $this->calculateMovingAverage($trades['trades'], $shortTermPeriods);
+                $longTermAverage = $this->calculateMovingAverage($trades['trades'], $longTermPeriods);
 
-            if ($isShortAboveLong && !$wasShortAboveLong && $currentRSI < $rsiThreshold) {
-                // Generate a buy signal
-                return "Buy";
-                // Implement code to execute a buy order using Luno API
-            } elseif (!$isShortAboveLong && $wasShortAboveLong) {
-                // Generate a sell signal
-                return "Sell";
-                // Implement code to execute a sell order using Luno API
+                // Calculate RSI values
+                $rsiValues = $this->calculateRSI($trades, $shortTermPeriods);
+
+                // Get the latest trade index
+                $tradeCount = count($trades['trades']);
+                $lastTradeIndex = $tradeCount - 1;
+
+                // Check for moving average crossover
+                $isShortAboveLong = $shortTermAverage[count($shortTermAverage) - 1] > $longTermAverage[count($longTermAverage) - 1];
+                $wasShortAboveLong = $shortTermAverage[count($shortTermAverage) - 2] > $longTermAverage[count($longTermAverage) - 2];
+
+                // Check RSI value
+                $currentRSI = $rsiValues[count($rsiValues) - 1];
+
+                if ($isShortAboveLong && !$wasShortAboveLong && $currentRSI < $rsiThresholdBuy) {
+                    // Generate a buy signal
+                    return "Buy";
+                    // Implement code to execute a buy order using Luno API
+                } elseif (!$isShortAboveLong && $wasShortAboveLong && $currentRSI > $rsiThresholdSell) {
+                    // Generate a sell signal
+                    return "Sell";
+                    // Implement code to execute a sell order using Luno API
+                } else {
+                    return 'PASS';
+                }
+
+            } else {
+                echo "Failed to fetch data from the API.";
             }
-            else{
-                return 'PASS';
-            }
-
-        } else {
-            echo "Failed to fetch data from the API.";
-        }
         } catch (\ErrorException $e) {
             // Handle exceptions
             return 'NODATA';
         }
     }
+
     // Calculate the moving average for a given period
     private function calculateMovingAverage($data, $period) {
         $movingAverages = [];
