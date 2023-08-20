@@ -29,7 +29,11 @@ class tradeBot extends Command
     public function handle()
     {
         $pairs = Tradepair::all();
-        //dd($this->checkAccountBalance());
+        $bal = $this->checkAccountBalance('ETH');
+        //dd($bal);
+        //dd($this->executeBuyOrder('ETHZAR',$bal['balance'],5));
+        dd($this->executeSellOrder('ETHZAR',$bal['balance'],5));
+       //dd($this->checkAccountBalance('ETH'));
         foreach ($pairs as $pair) {
             $result = $this->signal($pair->pairs);
             //dd($pair);
@@ -59,40 +63,63 @@ class tradeBot extends Command
         $tickerData = json_decode($response->getBody(), true);
         $currentPrice = $tickerData['last_trade'];
 
-        // Calculate the stop-loss price as a percentage below the current price
-        $stopLossPrice = $currentPrice - ($currentPrice * ($stopLossPercentage / 100));
+        // Calculate the cost as 0.599% of the amount to sell
+        $cost = $amountToSell * 0.00599; // 0.599% as a decimal
+
+        // Deduct the cost from the amount to sell
+        $amountToSell -= $cost;
+
+        // Round down the amount to sell to 6 decimal places
+        $roundedNumber = floor($amountToSell * 1000000) / 1000000;
 
         // Prepare sell order parameters
         $postData = [
             'pair' => $pair,
             'type' => 'SELL',
-            'volume' => $amountToSell,
-            'price' => $currentPrice,
-            'stop_price' => $stopLossPrice,
+            'base_volume' => $roundedNumber,
         ];
 
         // Replace with your Luno API key and secret
         $apiKey = env('APIKEY');
         $apiSecret = env('APISECRET');
 
-
         // Send the sell order request
-        $response = $client->post(env('LUNOAPI').'/postorder', [
-            'form_params' => $postData, // Use 'form_params' for form data
-            'auth' => [$apiKey,$apiSecret] // Add authentication
-        ]);
+        try {
+            $response = $client->post(env('LUNOAPI') . '/marketorder', [
+                'form_params' => $postData, // Use 'form_params' for form data
+                'auth' => [$apiKey, $apiSecret], // Add authentication
+            ]);
+        } catch (\GuzzleHttp\Exception\ClientException  $e) {
+            // Get the response from the exception
+            $response = $e->getResponse();
+
+            // Get the status code
+            $statusCode = $response->getStatusCode();
+
+            // Get the response body as a string
+            $body = $response->getBody()->getContents();
+
+            // Get the response headers as an array
+            $headers = $response->getHeaders();
+
+            // Display or log the error information
+            echo "Status Code: $statusCode\n";
+            echo "Response Body: $body\n";
+            echo "Response Headers:\n";
+            print_r($headers);
+        }
 
         // Handle the sell order response
         $sellOrderResponse = json_decode($response->getBody(), true);
         if (isset($sellOrderResponse['order_id'])) {
             echo "Sell order placed successfully. Order ID: {$sellOrderResponse['order_id']}\n";
-            echo "Stop-loss price: $stopLossPrice\n";
         } else {
             echo "Failed to place sell order.\n";
         }
     }
 
-    private function checkAccountBalance()
+
+    private function checkAccountBalance($cur)
     {
         try {
             // Replace with your Luno API key and secret
@@ -108,18 +135,13 @@ class tradeBot extends Command
 
             //dd($headers);
             // Send the request to check your account balance
-            $response = $client->get(env('LUNOAPI').'/balance?assets=ETH', $options);
+            $response = $client->get(env('LUNOAPI').'/balance?assets='.$cur, $options);
 
             // Parse and display the response
             if ($response->getStatusCode() === 200) {
                 $data = json_decode($response->getBody(), true);
                 // Extract and display your account balances
-                foreach ($data as $balance) {
-                    //dd($balance);
-                    $asset = $balance[0]['asset'];
-                    $balanceValue = $balance[0]['balance'];
-                    echo "Asset: $asset, Balance: $balanceValue\n";
-                }
+                return $data['balance'][0];
             } else {
                 echo "Failed to fetch account balance. HTTP Status Code: " . $response->getStatusCode() . "\n";
             }
@@ -128,28 +150,21 @@ class tradeBot extends Command
             echo "Error: " . $e->getMessage() . "\n";
         }
     }
+
     private function executeBuyOrder($pair, $budget, $stopLossPercentage)
     {
         $client = new Client();
+        $cost = $budget * 0.00599; // 0.599% as a decimal
 
-        // Fetch the current ticker price
-        $response = $client->get(env('LUNOAPI')."/ticker?pair=$pair");
-        $tickerData = json_decode($response->getBody(), true);
-        $currentPrice = $tickerData['last_trade'];
+        // Deduct the cost from the amount to sell
+        $budget -= $cost;
 
-        // Calculate the amount of cryptocurrency to buy
-        $amountToBuy = $budget / $currentPrice;
-
-        // Calculate the stop-loss price as a percentage below the current price
-        $stopLossPrice = $currentPrice - ($currentPrice * ($stopLossPercentage / 100));
-
+        $roundedNumber = floor($budget * 100) / 100;
         // Prepare buy order parameters
         $postData = [
             'pair' => $pair,
             'type' => 'BUY',
-            'volume' => $amountToBuy,
-            'price' => $currentPrice,
-            'stop_price' => $stopLossPrice, // Specify the stop-loss price here
+            'counter_volume' => $roundedNumber,
         ];
 
 
@@ -157,7 +172,7 @@ class tradeBot extends Command
         $apiKey = env('APIKEY');
         $apiSecret = env('APISECRET');
 
-        $response = $client->post(env('LUNOAPI').'/postorder', [
+        $response = $client->post(env('LUNOAPI').'/marketorder', [
             'form_params' => $postData, // Use 'form_params' for form data
             'auth' => [$apiKey,$apiSecret] // Add authentication
         ]);
@@ -166,7 +181,6 @@ class tradeBot extends Command
         $buyOrderResponse = json_decode($response->getBody(), true);
         if (isset($buyOrderResponse['order_id'])) {
             echo "Buy order placed successfully. Order ID: {$buyOrderResponse['order_id']}\n";
-            echo "Stop-loss price: $stopLossPrice\n";
         } else {
             echo "Failed to place buy order.\n";
         }
