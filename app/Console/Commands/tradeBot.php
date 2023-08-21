@@ -6,6 +6,8 @@ use Illuminate\Console\Command;
 use GuzzleHttp\Client;
 use App\Models\Tradepair;
 use App\Models\Transaction;
+use App\Models\TransactionHistory;
+use Illuminate\Support\Facades\Log;
 
 
 class tradeBot extends Command
@@ -30,27 +32,64 @@ class tradeBot extends Command
     public function handle()
     {
         $pairs = Tradepair::all();
-        $bal = $this->checkAccountBalance('ZAR');
-        //dd($bal);
-        //dd($this->executeBuyOrder('ETHZAR',$bal['balance'],5));
-        //dd($this->executeSellOrder('ETHZAR',$bal['balance'],5));
-       //dd($this->checkAccountBalance('ETH'));
         foreach ($pairs as $pair) {
-            $result = $this->signal($pair->pairs);
-            dd($pair);
-            if ($result === "Buy") {
-                echo "Buying " . $pair->pairs . "\n";
-                dd($pair);
-                // Execute buy order logic with budget and stop-loss
-                $this->executeBuyOrder($pair->pairs, $pair->budget, $pair->stoploss);
-            } elseif ($result === "Sell") {
-                echo "Selling " . $pair->pairs . "\n";
-                // Execute sell order logic here
-                // ...
-            } elseif ($result === "NODATA") {
-                echo "No recent trade data for " . $pair->pairs . "\n";
-            } elseif ($result === "PASS") {
-                echo "No trade signal for " . $pair->pairs . "\n";
+            $active = Transaction::where('pair', $pair)->first();
+            if($active)
+            {
+                Log::alert('Check Stop-loss for active coin '.$pair);
+                if($this->isStopLossTriggered($pair))
+                {
+                    Log::alert('Stop-Loss has been triggered for '.$pair.' Selling coin');
+                    $bal = $this->checkAccountBalance(str_replace('ZAR','',$pair));
+                    $this->executeSellOrder($pair,$bal['balance'],5);
+                    Log::alert('Stop-loss process complete for '.$pair);
+                }else
+                {
+                    Log::alert('Check if active coin needs to be sold');
+                    $result = $this->signal($pair->pairs);
+                    if($result === "Sell")
+                    {
+                        Log::alert('Sell signal has been triggered for '.$pair);
+                        $bal = $this->checkAccountBalance(str_replace('ZAR','',$pair));
+                        $this->executeSellOrder('ETHZAR',$bal['balance'],5);
+                    }
+                    else
+                    {
+                        Log::alert('Still holding '.$pair);
+                    }
+                }
+            }
+            else
+            {
+                $result = $this->signal($pair->pairs);
+                Log::alert('Check if coin needs to be bought '.$pair);
+                if ($result === "Buy")
+                {
+                    Log::alert('Buy flag has been found for '.$pair);
+                    Log::alert('Check if there is Funds to buy the Coin');
+                    $bal = $this->checkAccountBalance('ZAR');
+                    Log::alert('The current account balance is '.$bal['balance']);
+                    if($bal['balance'] >= 200)
+                    {
+                        Log::alert('Funds are available');
+                        Log::alert('Check if funds is more tha coin budget');
+                        if($bal['balance'] >= $pair->budget)
+                        {
+                            Log::alert('There is more funds available than the coin budget using the Budget for '.$pair);
+                            $this->executeBuyOrder($pair->pairs, $pair->budget, $pair->stoploss);
+                            Log::alert('Bought coin at its budget '.$pair);
+                        }else
+                        {
+                            Log::alert('There is not enough funds to match the Budget using all available funds');
+                            $this->executeBuyOrder($pair->pairs, $bal['balance'], $pair->stoploss);
+                            Log::alert('Bought coin for all available funds '.$pair);
+                        }
+                    }
+                }
+                else
+                {
+                    Log::alert('No signal for '.$pair);
+                }
             }
         }
     }
@@ -111,38 +150,28 @@ class tradeBot extends Command
         $apiSecret = env('APISECRET');
 
         // Send the sell order request
-        try {
-            $response = $client->post(env('LUNOAPI') . '/marketorder', [
-                'form_params' => $postData, // Use 'form_params' for form data
-                'auth' => [$apiKey, $apiSecret], // Add authentication
-            ]);
-        } catch (\GuzzleHttp\Exception\ClientException  $e) {
-            // Get the response from the exception
-            $response = $e->getResponse();
-
-            // Get the status code
-            $statusCode = $response->getStatusCode();
-
-            // Get the response body as a string
-            $body = $response->getBody()->getContents();
-
-            // Get the response headers as an array
-            $headers = $response->getHeaders();
-
-            // Display or log the error information
-            echo "Status Code: $statusCode\n";
-            echo "Response Body: $body\n";
-            echo "Response Headers:\n";
-            print_r($headers);
-        }
+        $response = $client->post(env('LUNOAPI') . '/marketorder', [
+            'form_params' => $postData, // Use 'form_params' for form data
+            'auth' => [$apiKey, $apiSecret], // Add authentication
+        ]);
 
         // Handle the sell order response
         $sellOrderResponse = json_decode($response->getBody(), true);
         if (isset($sellOrderResponse['order_id'])) {
             $transaction = Transaction::where('pair', $pair)->first();
             $transaction->delete();
+            $history = new TransactionHistory;
+            $history->pair = $pair;
+            $history->type = 'SELL';
+            $history->amount = $roundedNumber;
+            $history->price = $currentPrice; // Set the actual current price
+            $history->stop_loss = 0;
+            $history->save();
+            Log::alert('Luno has sold the coin');
+            return true;
+
         } else {
-            echo "Failed to place sell order.\n";
+            Log::error('Luno has failed to sell the coin');
         }
     }
 
@@ -188,8 +217,8 @@ class tradeBot extends Command
         $tickerData = json_decode($response->getBody(), true);
 
         if (!isset($tickerData['last_trade'])) {
-            echo "Failed to fetch ticker data. Aborting buy order.\n";
-            return;
+            Log::error('Failed to fetch ticker data. Aborting buy order');
+            return false;
         }
         $currentPrice = $tickerData['last_trade'];
         $cost = $budget * 0.00599; // 0.599% as a decimal
@@ -228,8 +257,17 @@ class tradeBot extends Command
             $transaction->price = $currentPrice; // Set the actual current price
             $transaction->stop_loss = $stopLoss;
             $transaction->save();
+            $history = new TransactionHistory;
+            $history->pair = $pair;
+            $history->type = 'BUY';
+            $history->amount = $roundedNumber;
+            $history->price = $currentPrice; // Set the actual current price
+            $history->stop_loss = $stopLoss;
+            $history->save();
+            return true;
         } else {
-            echo "Failed to place buy order.\n";
+            Log::error('Failed to buy coin '.$pair);
+            return false;
         }
     }
 
