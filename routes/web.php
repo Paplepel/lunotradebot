@@ -20,7 +20,7 @@ Route::get('/', function () {
 Route::get('/bot', function()
 {
     $exitCode = Artisan::call('trade:bot');
-    return redirect('/');
+    return view('welcome');
 });
 
 Auth::routes();
