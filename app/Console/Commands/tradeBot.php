@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use Illuminate\Console\Command;
 use GuzzleHttp\Client;
 use App\Models\Tradepair;
+use App\Models\Transaction;
 
 
 class tradeBot extends Command
@@ -29,14 +30,14 @@ class tradeBot extends Command
     public function handle()
     {
         $pairs = Tradepair::all();
-        $bal = $this->checkAccountBalance('ETH');
+        $bal = $this->checkAccountBalance('ZAR');
         //dd($bal);
-        //dd($this->executeBuyOrder('ETHZAR',$bal['balance'],5));
+        dd($this->executeBuyOrder('ETHZAR',$bal['balance'],5));
         //dd($this->executeSellOrder('ETHZAR',$bal['balance'],5));
        //dd($this->checkAccountBalance('ETH'));
         foreach ($pairs as $pair) {
             $result = $this->signal($pair->pairs);
-            //dd($pair);
+            dd($pair);
             if ($result === "Buy") {
                 echo "Buying " . $pair->pairs . "\n";
                 dd($pair);
@@ -52,6 +53,32 @@ class tradeBot extends Command
                 echo "No trade signal for " . $pair->pairs . "\n";
             }
         }
+    }
+
+    private function isStopLossTriggered($pair)
+    {
+
+        $client = new Client();
+
+        $response = $client->get(env('LUNOAPI') . "/ticker?pair=$pair");
+        $tickerData = json_decode($response->getBody(), true);
+        $tickerData = json_decode($response->getBody(), true);
+
+        if (!isset($tickerData['last_trade'])) {
+            echo "Failed to fetch ticker data. Aborting buy order.\n";
+            return false;
+        }
+        $currentPrice = $tickerData['last_trade'];
+        // Retrieve relevant transaction data from your database for the specified trading pair
+        $transactions = Transaction::where('pair', $pair)->first();
+
+        // Check if any of the transactions have a stop loss condition that is triggered
+        if($transactions->stop_loss >= $currentPrice)
+        {
+            return true;
+        }
+
+        return false; // Stop loss not triggered
     }
 
     private function executeSellOrder($pair, $amountToSell, $stopLossPercentage)
@@ -112,7 +139,8 @@ class tradeBot extends Command
         // Handle the sell order response
         $sellOrderResponse = json_decode($response->getBody(), true);
         if (isset($sellOrderResponse['order_id'])) {
-            echo "Sell order placed successfully. Order ID: {$sellOrderResponse['order_id']}\n";
+            $transaction = Transaction::where('pair', $pair)->first();
+            $transaction->delete();
         } else {
             echo "Failed to place sell order.\n";
         }
@@ -154,12 +182,24 @@ class tradeBot extends Command
     private function executeBuyOrder($pair, $budget, $stopLossPercentage)
     {
         $client = new Client();
+
+        $response = $client->get(env('LUNOAPI') . "/ticker?pair=$pair");
+        $tickerData = json_decode($response->getBody(), true);
+        $tickerData = json_decode($response->getBody(), true);
+
+        if (!isset($tickerData['last_trade'])) {
+            echo "Failed to fetch ticker data. Aborting buy order.\n";
+            return;
+        }
+        $currentPrice = $tickerData['last_trade'];
         $cost = $budget * 0.00599; // 0.599% as a decimal
 
         // Deduct the cost from the amount to sell
         $budget -= $cost;
 
         $roundedNumber = floor($budget * 100) / 100;
+
+        $stopLoss = $currentPrice - ($currentPrice * ($stopLossPercentage / 100));
         // Prepare buy order parameters
         $postData = [
             'pair' => $pair,
@@ -179,8 +219,15 @@ class tradeBot extends Command
 
         // Handle the buy order response
         $buyOrderResponse = json_decode($response->getBody(), true);
+        //dd($buyOrderResponse);
         if (isset($buyOrderResponse['order_id'])) {
-            echo "Buy order placed successfully. Order ID: {$buyOrderResponse['order_id']}\n";
+            $transaction = new Transaction;
+            $transaction->pair = $pair;
+            $transaction->type = 'BUY';
+            $transaction->amount = $roundedNumber;
+            $transaction->price = $currentPrice; // Set the actual current price
+            $transaction->stop_loss = $stopLoss;
+            $transaction->save();
         } else {
             echo "Failed to place buy order.\n";
         }
