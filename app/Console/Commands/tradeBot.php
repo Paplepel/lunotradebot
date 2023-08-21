@@ -104,7 +104,7 @@ class tradeBot extends Command
         $tickerData = json_decode($response->getBody(), true);
 
         if (!isset($tickerData['last_trade'])) {
-            echo "Failed to fetch ticker data. Aborting buy order.\n";
+            Log::error('Failed to fetch ticker data. Aborting buy order.');
             return false;
         }
         $currentPrice = $tickerData['last_trade'];
@@ -200,12 +200,12 @@ class tradeBot extends Command
                 // Extract and display your account balances
                 return $data['balance'][0];
             } else {
-                echo "Failed to fetch account balance. HTTP Status Code: " . $response->getStatusCode() . "\n";
+                Log::error("Failed to fetch account balance for ".$cur.". HTTP Status Code: " . $response->getStatusCode());
             }
-        } catch (\ErrorException $e) {
-            // Handle exceptions
-            echo "Error: " . $e->getMessage() . "\n";
-        }
+            } catch (\ErrorException $e) {
+                // Handle exceptions
+                Log::error("Error: " . $e->getMessage());
+            }
     }
 
     private function executeBuyOrder($pair, $budget, $stopLossPercentage)
@@ -330,7 +330,7 @@ class tradeBot extends Command
                 }
 
             } else {
-                echo "Failed to fetch data from the API.";
+                Log::error("Failed to fetch data from the API.");
             }
         } catch (\ErrorException $e) {
             // Handle exceptions
