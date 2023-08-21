@@ -8,6 +8,7 @@ use App\Models\Tradepair;
 use App\Models\Transaction;
 use App\Models\TransactionHistory;
 use Illuminate\Support\Facades\Log;
+use App\Models\Setting;
 
 
 class tradeBot extends Command
@@ -99,7 +100,7 @@ class tradeBot extends Command
 
         $client = new Client();
 
-        $response = $client->get(env('LUNOAPI') . "/ticker?pair=$pair");
+        $response = $client->get(Setting::where('key', 'LUNOAPI')->value('value') . "/ticker?pair=$pair");
         $tickerData = json_decode($response->getBody(), true);
         $tickerData = json_decode($response->getBody(), true);
 
@@ -125,7 +126,7 @@ class tradeBot extends Command
         $client = new Client();
 
         // Fetch the current ticker price
-        $response = $client->get(env('LUNOAPI') . "/ticker?pair=$pair");
+        $response = $client->get(Setting::where('key', 'LUNOAPI')->value('value') . "/ticker?pair=$pair");
         $tickerData = json_decode($response->getBody(), true);
         $currentPrice = $tickerData['last_trade'];
 
@@ -146,11 +147,11 @@ class tradeBot extends Command
         ];
 
         // Replace with your Luno API key and secret
-        $apiKey = env('APIKEY');
-        $apiSecret = env('APISECRET');
+        $apiKey = Setting::where('key', 'APIKEY')->value('value');
+        $apiSecret = Setting::where('key', 'APISECRET')->value('value');
 
         // Send the sell order request
-        $response = $client->post(env('LUNOAPI') . '/marketorder', [
+        $response = $client->post(Setting::where('key', 'LUNOAPI')->value('value') . '/marketorder', [
             'form_params' => $postData, // Use 'form_params' for form data
             'auth' => [$apiKey, $apiSecret], // Add authentication
         ]);
@@ -180,8 +181,8 @@ class tradeBot extends Command
     {
         try {
             // Replace with your Luno API key and secret
-            $apiKey = env('APIKEY');
-            $apiSecret = env('APISECRET');
+            $apiKey = Setting::where('key', 'APIKEY')->value('value');
+            $apiSecret = Setting::where('key', 'APISECRET')->value('value');
 
             // Create a Guzzle client instance
             $client = new Client();
@@ -192,7 +193,7 @@ class tradeBot extends Command
 
             //dd($headers);
             // Send the request to check your account balance
-            $response = $client->get(env('LUNOAPI').'/balance?assets='.$cur, $options);
+            $response = $client->get(Setting::where('key', 'LUNOAPI')->value('value').'/balance?assets='.$cur, $options);
 
             // Parse and display the response
             if ($response->getStatusCode() === 200) {
@@ -212,7 +213,7 @@ class tradeBot extends Command
     {
         $client = new Client();
 
-        $response = $client->get(env('LUNOAPI') . "/ticker?pair=$pair");
+        $response = $client->get(Setting::where('key', 'LUNOAPI')->value('value') . "/ticker?pair=$pair");
         $tickerData = json_decode($response->getBody(), true);
         $tickerData = json_decode($response->getBody(), true);
 
@@ -238,10 +239,10 @@ class tradeBot extends Command
 
 
         // Replace with your Luno API key and secret
-        $apiKey = env('APIKEY');
-        $apiSecret = env('APISECRET');
+        $apiKey = Setting::where('key', 'APIKEY')->value('value');
+        $apiSecret = Setting::where('key', 'APISECRET')->value('value');
 
-        $response = $client->post(env('LUNOAPI').'/marketorder', [
+        $response = $client->post(Setting::where('key', 'LUNOAPI')->value('value').'/marketorder', [
             'form_params' => $postData, // Use 'form_params' for form data
             'auth' => [$apiKey,$apiSecret] // Add authentication
         ]);
@@ -274,9 +275,9 @@ class tradeBot extends Command
     private function signal($pair)
     {
         try {
-            $apiKey = env('APIKEY');
-            $apiSecret = env('APISECRET');
-            $baseUrl = env('LUNOAPI');
+            $apiKey = Setting::where('key', 'APIKEY')->value('value');
+            $apiSecret = Setting::where('key', 'APISECRET')->value('value');
+            $baseUrl = Setting::where('key', 'LUNOAPI')->value('value');
 
             // Create a Guzzle client instance
             $client = new Client();
@@ -288,13 +289,13 @@ class tradeBot extends Command
                 $trades = json_decode($response->getBody(), true);
 
                 // Define parameters for the strategy
-                $rsiThresholdBuy = env('RSI_BUY');    // RSI threshold for buy confirmation
-                $rsiThresholdSell = env('RSI_SELL');  // RSI threshold for sell confirmation
+                $rsiThresholdBuy = Setting::where('key', 'RSI_BUY')->value('value');    // RSI threshold for buy confirmation
+                $rsiThresholdSell = Setting::where('key', 'RSI_SELL')->value('value');;  // RSI threshold for sell confirmation
 
                 // Calculate short-term and long-term moving averages
                 // Define your short-term and long-term intervals in minutes
-                $shortTermInterval = env('SHORTTERM'); // 15 minutes for short-term indicator
-                $longTermInterval = env('LONGTERM');   // 1 hour (60 minutes) for long-term indicator
+                $shortTermInterval = Setting::where('key', 'SHORTTERM')->value('value'); // 15 minutes for short-term indicator
+                $longTermInterval = Setting::where('key', 'LONGTERM')->value('value');   // 1 hour (60 minutes) for long-term indicator
 
                 // Calculate the number of periods based on the intervals
                 $shortTermPeriods = 24 * 60 / $shortTermInterval; // 24 hours of 15-minute periods
