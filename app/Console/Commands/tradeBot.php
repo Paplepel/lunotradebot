@@ -32,7 +32,7 @@ class tradeBot extends Command
         $pairs = Tradepair::all();
         $bal = $this->checkAccountBalance('ZAR');
         //dd($bal);
-        dd($this->executeBuyOrder('ETHZAR',$bal['balance'],5));
+        //dd($this->executeBuyOrder('ETHZAR',$bal['balance'],5));
         //dd($this->executeSellOrder('ETHZAR',$bal['balance'],5));
        //dd($this->checkAccountBalance('ETH'));
         foreach ($pairs as $pair) {
