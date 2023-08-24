@@ -122,7 +122,7 @@ class tradeBot extends Command
             return true; // Trailing stop loss triggered
         }
         $highstop = $highestPrice - ($highestPrice * ($traidpair->stoploss / 100));
-        if($highstop >= $stopLoss )
+        if($highstop > $stopLoss )
         {
             Log::alert('Update the stop loss for '.$pair.' from '.$stopLoss.' to '.$highstop);
             $transactions->stop_loss = $highstop;
