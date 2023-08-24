@@ -34,15 +34,15 @@ class tradeBot extends Command
     {
         $pairs = Tradepair::all();
         foreach ($pairs as $pair) {
-            $active = Transaction::where('pair', $pair)->first();
+            $active = Transaction::where('pair', $pair->pairs)->first();
             if($active)
             {
                 Log::alert('Check Stop-loss for active coin '.$pair);
-                if($this->isStopLossTriggered($pair))
+                if($this->isStopLossTriggered($pair->pairs))
                 {
                     Log::alert('Stop-Loss has been triggered for '.$pair.' Selling coin');
-                    $bal = $this->checkAccountBalance(str_replace('ZAR','',$pair));
-                    $this->executeSellOrder($pair,$bal['balance'],5);
+                    $bal = $this->checkAccountBalance(str_replace('ZAR','',$pair->pairs));
+                    $this->executeSellOrder($pair->pairs,$bal['balance'],5);
                     Log::alert('Stop-loss process complete for '.$pair);
                 }else
                 {
@@ -52,7 +52,7 @@ class tradeBot extends Command
                     {
                         Log::alert('Sell signal has been triggered for '.$pair);
                         $bal = $this->checkAccountBalance(str_replace('ZAR','',$pair));
-                        $this->executeSellOrder('ETHZAR',$bal['balance'],5);
+                        $this->executeSellOrder($pair->pairs,$bal['balance'],5);
                     }
                     else
                     {
@@ -97,29 +97,67 @@ class tradeBot extends Command
 
     private function isStopLossTriggered($pair)
     {
-
         $client = new Client();
-
+        $traidpair = Tradepair::Where('pairs',$pair)->first();
+        //$stopLoss = $currentPrice - ($currentPrice * ($stopLossPercentage / 100));
+        // Fetch the current ticker price
         $response = $client->get(Setting::where('key', 'LUNOAPI')->value('value') . "/ticker?pair=$pair");
-        $tickerData = json_decode($response->getBody(), true);
         $tickerData = json_decode($response->getBody(), true);
 
         if (!isset($tickerData['last_trade'])) {
             Log::error('Failed to fetch ticker data. Aborting buy order.');
             return false;
         }
+
         $currentPrice = $tickerData['last_trade'];
+
         // Retrieve relevant transaction data from your database for the specified trading pair
         $transactions = Transaction::where('pair', $pair)->first();
 
-        // Check if any of the transactions have a stop loss condition that is triggered
-        if($transactions->stop_loss >= $currentPrice)
-        {
-            return true;
+        $stopLoss = $transactions->stop_loss;
+        $highestPrice = $this->getHighestTradePrice($pair);
+
+        // Check if the current price is below the trailing stop loss
+        if ($currentPrice <= $stopLoss) {
+            return true; // Trailing stop loss triggered
         }
+        $highstop = $highestPrice - ($highestPrice * ($traidpair->stoploss / 100));
+        if($highstop >= $stopLoss )
+        {
+            Log::alert('Update the stop loss for '.$pair);
+            $transactions->stop_loss = $highstop;
+            $transactions->save();
+        }
+
 
         return false; // Stop loss not triggered
     }
+
+// Helper function to get the highest trade price for a pair
+    private function getHighestTradePrice($pair)
+    {
+        $client = new Client();
+
+        // Fetch the trade history for the specified pair
+        $response = $client->get(Setting::where('key', 'LUNOAPI')->value('value') . "/trades?pair=$pair");
+        $tradeData = json_decode($response->getBody(), true);
+
+        if (!isset($tradeData['trades'])) {
+            Log::error('Failed to fetch trade history. Unable to determine highest trade price.');
+            return 0;
+        }
+
+        $highestPrice = 0;
+
+        foreach ($tradeData['trades'] as $trade) {
+            if ($trade['price'] > $highestPrice) {
+                $highestPrice = $trade['price'];
+            }
+        }
+
+        return $highestPrice;
+    }
+
 
     private function executeSellOrder($pair, $amountToSell, $stopLossPercentage)
     {
