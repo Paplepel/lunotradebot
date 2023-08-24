@@ -124,7 +124,7 @@ class tradeBot extends Command
         $highstop = $highestPrice - ($highestPrice * ($traidpair->stoploss / 100));
         if($highstop >= $stopLoss )
         {
-            Log::alert('Update the stop loss for '.$pair);
+            Log::alert('Update the stop loss for '.$pair.' from '.$stopLoss.' to '.$highstop);
             $transactions->stop_loss = $highstop;
             $transactions->save();
         }
@@ -252,7 +252,6 @@ class tradeBot extends Command
         $client = new Client();
 
         $response = $client->get(Setting::where('key', 'LUNOAPI')->value('value') . "/ticker?pair=$pair");
-        $tickerData = json_decode($response->getBody(), true);
         $tickerData = json_decode($response->getBody(), true);
 
         if (!isset($tickerData['last_trade'])) {
