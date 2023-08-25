@@ -1,7 +1,6 @@
 ---
 deployment:
   tasks:
-    - command: "/usr/local/bin/ea-php81 /home/sopleudy/public_html/composer.phar self-update"
     - command: "/usr/local/bin/ea-php81 /home/sopleudy/public_html/composer.phar update"
       timeout: 600
 
