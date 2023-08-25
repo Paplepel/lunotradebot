@@ -1,7 +1,8 @@
 ---
 deployment:
   tasks:
-    - command: "/usr/local/bin/ea-php81 composer.phar self-update"
-    - command: "/usr/local/bin/ea-php81 composer.phar update"
-      cwd: /home/sopleudy/public_html  # Replace with your app's actual path
-      timeout: 600  # Optional: Adjust the timeout as needed
+    - command: "/usr/local/bin/ea-php81 /home/sopleudy/public_html/composer.phar self-update"
+    - command: "/usr/local/bin/ea-php81 /home/sopleudy/public_html/composer.phar update"
+      timeout: 600
+
+
