@@ -312,88 +312,61 @@ class tradeBot extends Command
     private function signal($pair)
     {
         try {
-            $apiKey = Setting::where('key', 'APIKEY')->value('value');
-            $apiSecret = Setting::where('key', 'APISECRET')->value('value');
             $baseUrl = Setting::where('key', 'LUNOAPI')->value('value');
+
+            // Fetching the necessary configurations
+            $shortTermPeriods = Setting::where('key', 'SHORTTERM')->value('value');
+            $rsiThresholdBuy = Setting::where('key', 'RSI_BUY')->value('value');
+            $rsiThresholdSell = Setting::where('key', 'RSI_SELL')->value('value');
 
             // Create a Guzzle client instance
             $client = new Client();
-
-            // Fetch historical price data for analysis
             $response = $client->get($baseUrl . "/trades?pair=" . $pair);
 
             if ($response->getStatusCode() === 200) {
                 $trades = json_decode($response->getBody(), true);
 
-                // Define parameters for the strategy
-                $rsiThresholdBuy = Setting::where('key', 'RSI_BUY')->value('value');    // RSI threshold for buy confirmation
-                $rsiThresholdSell = Setting::where('key', 'RSI_SELL')->value('value');;  // RSI threshold for sell confirmation
-
-                // Calculate short-term and long-term moving averages
-                // Define your short-term and long-term intervals in minutes
-                $shortTermInterval = Setting::where('key', 'SHORTTERM')->value('value'); // 15 minutes for short-term indicator
-                $longTermInterval = Setting::where('key', 'LONGTERM')->value('value');   // 1 hour (60 minutes) for long-term indicator
-
-                // Calculate the number of periods based on the intervals
-                $shortTermPeriods = 24 * 60 / $shortTermInterval; // 24 hours of 15-minute periods
-                $longTermPeriods = 24 * 60 / $longTermInterval;   // 24 hours of 1-hour periods
-
-                $shortTermAverage = $this->calculateMovingAverage($trades['trades'], $shortTermPeriods);
-                $longTermAverage = $this->calculateMovingAverage($trades['trades'], $longTermPeriods);
+                // Extract prices for MACD calculations
+                $prices = array_column($trades['trades'], 'price');
+                $volumes = array_column($trades['trades'], 'volume');
+                $macdValues = $this->calculateMACD($prices);
+                $signalLine = $this->calculateEMA($macdValues, 9);
 
                 // Calculate RSI values
                 $rsiValues = $this->calculateRSI($trades, $shortTermPeriods);
 
-                // Get the latest trade index
-                $tradeCount = count($trades['trades']);
-                $lastTradeIndex = $tradeCount - 1;
-
-                // Check for moving average crossover
-                $isShortAboveLong = $shortTermAverage[count($shortTermAverage) - 1] > $longTermAverage[count($longTermAverage) - 1];
-                $wasShortAboveLong = $shortTermAverage[count($shortTermAverage) - 2] > $longTermAverage[count($longTermAverage) - 2];
-
-                // Check RSI value
+                $lastMACD = $macdValues[count($macdValues) - 1];
+                $lastSignal = $signalLine[count($signalLine) - 1];
                 $currentRSI = $rsiValues[count($rsiValues) - 1];
 
-                if ($isShortAboveLong && !$wasShortAboveLong && $currentRSI < $rsiThresholdBuy) {
-                    // Generate a buy signal
-                    return "Buy";
-                    // Implement code to execute a buy order using Luno API
-                } elseif (!$isShortAboveLong && $wasShortAboveLong && $currentRSI > $rsiThresholdSell) {
-                    // Generate a sell signal
-                    return "Sell";
-                    // Implement code to execute a sell order using Luno API
-                } else {
-                    return 'PASS';
+                // Determine the trend using MACD
+                $isUptrend = $lastMACD > $lastSignal;
+
+                $volumePeriod = 10; // You can set any number for n to decide how many previous trades you want to take the average from
+                $averageVolume = array_sum(array_slice($volumes, -$volumePeriod)) / $volumePeriod;
+                $currentVolume = $volumes[count($volumes) - 1];
+                $isHighVolume = $currentVolume > $averageVolume;
+
+                if ($isUptrend) {
+                    if ($currentRSI < $rsiThresholdBuy && $isHighVolume) {
+                        return "Buy";
+                    } elseif ($currentRSI > $rsiThresholdSell && $isHighVolume) {
+                        return "Sell";
+                    } else {
+                        return 'PASS';
+                    }
                 }
+                return 'No Uptrend';  // No trading in the absence of an uptrend
 
             } else {
                 Log::error("Failed to fetch data from the API.");
+                return 'NODATA';
             }
         } catch (\ErrorException $e) {
             // Handle exceptions
+            Log::error("Error occurred: " . $e->getMessage());
             return 'NODATA';
         }
-    }
-
-    // Calculate the moving average for a given period
-    private function calculateMovingAverage($data, $period) {
-        $movingAverages = [];
-
-        for ($i = $period - 1; $i < count($data); $i++) {
-            $sum = 0;
-
-            // Calculate the sum of prices for the specified period
-            for ($j = $i - $period + 1; $j <= $i; $j++) {
-                $sum += $data[$j]['price']; // Assuming the data is in the format ['price' => 123.45, ...]
-            }
-
-            // Calculate the moving average for the current data point
-            $average = $sum / $period;
-            $movingAverages[] = $average;
-        }
-
-        return $movingAverages;
     }
 
     // Calculate the RSI values
@@ -447,5 +420,33 @@ class tradeBot extends Command
 
 
     }
+
+    private function calculateEMA($prices, $period) {
+        $alpha = 2 / ($period + 1);
+        $ema = [];
+
+        // Use simple average for the first value
+        $ema[0] = array_sum(array_slice($prices, 0, $period)) / $period;
+
+        for ($i = $period; $i < count($prices); $i++) {
+            $ema[] = ($prices[$i] - $ema[$i - $period]) * $alpha + $ema[$i - $period];
+        }
+
+        return $ema;
+    }
+
+    private function calculateMACD($prices) {
+        $ema12 = $this->calculateEMA($prices, 12);
+        $ema26 = $this->calculateEMA($prices, 26);
+
+        $macd = [];
+        $minLength = min(count($ema12), count($ema26));
+        for ($i = 0; $i < $minLength; $i++) {
+            $macd[] = $ema12[$i] - $ema26[$i];
+        }
+
+        return $macd;
+    }
+
 
 }
