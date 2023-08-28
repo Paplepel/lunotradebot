@@ -94,7 +94,6 @@ class tradeBot extends Command
             }
         }
     }
-
     private function isStopLossTriggered($pair)
     {
         $client = new Client();
@@ -158,7 +157,6 @@ class tradeBot extends Command
         return $highestPrice;
     }
 
-
     private function executeSellOrder($pair, $amountToSell, $stopLossPercentage)
     {
         $client = new Client();
@@ -213,7 +211,6 @@ class tradeBot extends Command
             Log::error('Luno has failed to sell the coin');
         }
     }
-
 
     private function checkAccountBalance($cur)
     {
@@ -450,6 +447,5 @@ class tradeBot extends Command
 
         return $macd;
     }
-
 
 }
