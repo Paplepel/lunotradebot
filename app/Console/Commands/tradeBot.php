@@ -350,13 +350,16 @@ class tradeBot extends Command
                 if ($isUptrend) {
                     if ($currentRSI < $rsiThresholdBuy && $isHighVolume) {
                         return "Buy";
-                    } elseif ($currentRSI > $rsiThresholdSell && $isHighVolume) {
+                    } else {
+                        return 'PASS';
+                    }
+                } else { // Ignore the uptrend for "Sell"
+                    if ($currentRSI > $rsiThresholdSell && $isHighVolume) {
                         return "Sell";
                     } else {
                         return 'PASS';
                     }
                 }
-                return 'No Uptrend';  // No trading in the absence of an uptrend
 
             } else {
                 Log::error("Failed to fetch data from the API.");
