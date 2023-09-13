@@ -51,7 +51,7 @@ class tradeBot extends Command
                     if($result === "Sell")
                     {
                         Log::alert('Sell signal has been triggered for '.$pair);
-                        $bal = $this->checkAccountBalance(str_replace('ZAR','',$pair));
+                        $bal = $this->checkAccountBalance(str_replace('ZAR','',$pair->pairs));
                         $this->executeSellOrder($pair->pairs,$bal['balance'],5);
                     }
                     else
