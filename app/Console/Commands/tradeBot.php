@@ -125,7 +125,7 @@ class tradeBot extends Command
         {
             Log::alert('Update the stop loss for '.$pair.' from '.$stopLoss.' to '.$highstop);
             $transactions->stop_loss = $highstop;
-            $transactions->save();
+            //$transactions->save();
         }
 
 
